@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* H3 工作台暗色主题（即梦风）：集中定义色板 */
+@theme {
+  --color-base: #0d0e12;
+  --color-surface: #14151b;
+  --color-surface-2: #1b1d25;
+  --color-surface-3: #232631;
+  --color-line: #2a2d3a;
+  --color-ink: #f2f3f7;
+  --color-ink-2: #b9bcc9;
+  --color-ink-3: #7d818f;
+  --color-brand: #7c6cff;
+  --color-brand-2: #4f8cff;
+  --color-ok: #3ecf8e;
+  --color-warn: #f5b544;
+  --color-danger: #f5566b;
+
+  --font-sans:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
+    -apple-system, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-line);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
