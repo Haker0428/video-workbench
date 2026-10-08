@@ -1,74 +1,166 @@
-# H3 视频生成工作台
+# H3 Video Workbench
 
-本地部署的 [Sol-H3-Spark](doc/h3-http-api.md) 视频生成桌面客户端（Tauri 2 + React）。
+面向本地或私有化 H3 视频生成服务的桌面工作台。项目基于 **Tauri 2 + React + TypeScript**，提供统一的创作、任务追踪、视频预览和本地归档体验。
 
-UI 参考「即梦」：暗色主题，左侧创作面板 + 右侧作品流。服务端 API 见 [doc/h3-http-api.md](doc/h3-http-api.md)。
+> 当前版本：`0.1.0`。本仓库是客户端与开发用 Mock 服务，不包含模型权重或 H3 推理服务。
 
-## 功能
+## 项目亮点
 
-- **侧边栏双模式**（H3 视频分组，后续可扩展图像生成等新分组）：
-  - **工作台**：即梦式创作面板 + 作品流（下述功能的主入口）
-  - **对话生成**：聊天式输入框（随心输入 + 附件），按附件**自动识别生成模式**——纯文字 → 文生视频、1~2 张图 → 首尾帧、更多素材/视频/音频 → 参考生成；识别结果以标签展示，发送前可点击切换为手动指定。会话历史本地持久化（chats.json），任务以卡片内嵌在对话中实时更新状态
-- **服务状态**：顶栏实时轮询 `/health`，展示运行中 / 预热进度（11 个启动阶段中文映射 + 剩余时间）/ 已断开 / 服务异常
-- **远端控制**：通过本机现有 SSH 配置启动/停止 Spark 服务；启动后自动轮询 Tailscale API，展示阶段、百分比、已用时间和预计剩余
-- **多后端切换**：顶栏选择 Sol-H3 Spark 或 GB10；任务记录提交时的后端与 URL，切换后仍从原服务轮询、播放和归档
-- **文生视频（T2VA）**：提示词 + 可选音频描述（自动拼接 `overall_soundscape:`）+ seed（骰子随机 / 沿用上次）
-- **首尾帧（FL2VA）**：首帧/尾帧上传（点击或拖拽，png/jpg/webp ≤16MiB，本地落盘内容寻址去重）
-- **参考生成（Ref2VA）**：多图参考（≤4 张，可打「人物/场景/风格」标签）+ 可选视频/音频参考；需要独立部署的 Ref2VA 服务（契约提案见 [doc/ref2va-http-api-proposal.md](doc/ref2va-http-api-proposal.md)），在设置中添加服务地址后启用
-- **作品流**：任务卡片四态（排队 / 生成中计时 / 完成缩略图 / 失败重试），筛选与搜索，详情抽屉（播放器 + 各阶段耗时元数据）
-- **本地归档**：任务完成后自动下载 MP4 到本地（可关），H3 服务重启导致远端文件丢失（410）不影响已归档作品；未归档时播放走远端代理
-- **任务历史**：本地 JSON 持久化，重启应用不丢；支持回填参数再次生成、删除记录、打开所在文件夹
+- **三种生成模式**：文生视频（T2VA）、首尾帧生成（FL2VA）和多素材参考生成（Ref2VA）。
+- **工作台与对话双入口**：既可使用结构化创作面板，也可在对话中通过提示词和附件发起任务。
+- **自动识别任务类型**：根据附件数量与类型推断生成模式，同时允许手动切换。
+- **多后端管理**：可在多个 H3 服务之间切换；每个任务保留提交时的后端快照。
+- **完整任务生命周期**：展示排队、生成、完成和失败状态，支持搜索、筛选、重试与再次生成。
+- **本地可靠归档**：生成完成后可自动下载视频；远端文件失效时仍可播放本地副本。
+- **服务状态可视化**：轮询健康状态和预热进度，并展示阶段、耗时与预计剩余时间。
+- **开发友好的 Mock 服务**：可模拟预热、生成、失败和远端文件丢失等场景。
 
-## 启动开发环境
+## 界面与工作流
+
+```text
+输入提示词 / 添加素材
+          │
+          ▼
+自动识别 T2VA / FL2VA / Ref2VA
+          │
+          ▼
+提交到选定的 H3 后端
+          │
+          ▼
+轮询状态 ──► 预览结果 ──► 本地归档
+```
+
+任务既可以从“工作台”创建，也可以嵌入“对话生成”的会话流中。会话、任务和设置均保存在本地。
+
+## 技术栈
+
+| 层 | 技术 |
+| --- | --- |
+| 桌面容器 | Tauri 2 |
+| 前端 | React 19、TypeScript、Vite |
+| 样式 | Tailwind CSS |
+| 状态管理 | Zustand |
+| 本地能力 | Rust、Tokio、Reqwest |
+| 数据存储 | 本地 JSON 文件 |
+| 视频访问 | 自定义 `h3video://` 协议 |
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 22
+- pnpm
+- Rust stable
+- Tauri 对应平台的系统依赖
+
+### 安装依赖
 
 ```bash
-# 1. 启动 mock H3 服务（默认与真实服务同端口 127.0.0.1:30010）
-pnpm mock                        # 可加参数：--startup-secs 60 --gen-secs 15 --fail-rate 0.2 --lose-files --fatal
-# 如需联调 Ref2VA 模式，再起一个独立实例（对齐真实部署形态）：
-node mock/server.mjs --port 30011 --task ref2va
+pnpm install
+```
 
-# 2. 启动工作台
+### 使用 Mock 服务开发
+
+先启动开发用 H3 服务：
+
+```bash
+pnpm mock
+```
+
+另开一个终端启动桌面应用：
+
+```bash
 pnpm tauri dev
 ```
 
-然后在应用设置里添加 Ref2VA 服务地址 `http://127.0.0.1:30011`。
+Mock 服务默认监听 `http://127.0.0.1:30010`。可通过参数模拟不同状态：
 
-联调真实 H3 服务：应用设置里把服务地址改为 GPU 服务器地址（当前 Spark Tailscale 地址为 `http://100.64.52.42:30010`），必要时填 API Key。远端启动配置与 GB10 接入契约见 [doc/backend-control.md](doc/backend-control.md)。
+```bash
+node mock/server.mjs \
+  --port 30010 \
+  --startup-secs 60 \
+  --gen-secs 15 \
+  --fail-rate 0.2 \
+  --lose-files
+```
+
+如需联调 Ref2VA，可再启动一个独立实例：
+
+```bash
+node mock/server.mjs --port 30011 --task ref2va
+```
+
+随后在应用设置中添加 `http://127.0.0.1:30011`。
+
+### 连接真实服务
+
+在应用设置中填写兼容的 H3 HTTP 服务地址，并按需配置 API Key。接口约定见 [H3 HTTP API](doc/h3-http-api.md)；多后端与远端控制说明见 [后端控制设计](doc/backend-control.md)。
+
+请勿将真实 API Key、内网地址或个人配置提交到仓库。
 
 ## 构建
 
+前端类型检查与生产构建：
+
 ```bash
-pnpm tauri build   # 产出 .dmg / .app
+pnpm build
 ```
 
-## 架构
+构建桌面安装包：
 
-```
-mock/server.mjs        零依赖 mock H3 服务（开发用，可模拟预热/失败/丢文件）
-src/                   React 前端（zustand 状态 + invoke 封装）
-src-tauri/src/
-  ├── h3/              reqwest H3 客户端（health/submit/query/download）
-  ├── store.rs         任务历史 JSON 模型 + 原子持久化（tasks.json）
-  ├── archiver.rs      自动归档下载（去重、.part→rename、进度事件）
-  ├── protocol.rs      h3video:// 自定义协议（本地 Range 流式 + 远端代理）
-  └── commands/        Tauri 命令层（settings/health/tasks）
+```bash
+pnpm tauri build
 ```
 
-`scripts/remote/sol_h3_service.sh` 是部署到 Spark 的服务管理脚本。它使用 PID 文件和独立进程组管理常驻服务，为每次启动创建唯一输出目录与日志。
+产物位置由 Tauri 决定，通常位于 `src-tauri/target/release/bundle/`。
 
-数据目录（macOS）：`~/Library/Application Support/com.h3.workbench/`
+## 项目结构
 
+```text
+.
+├── src/                        React 前端
+│   ├── api/                    Tauri 命令与事件封装
+│   ├── components/             创作、对话、作品流和设置界面
+│   ├── hooks/                  健康检查、归档事件与任务筛选
+│   ├── lib/                    文件、格式化与模式识别工具
+│   └── stores/                 Zustand 状态
+├── src-tauri/
+│   ├── src/commands/           设置、健康检查、任务与对话命令
+│   ├── src/h3/                 H3 HTTP 客户端
+│   ├── src/archiver.rs         自动归档
+│   ├── src/protocol.rs         h3video:// 视频协议
+│   └── src/store.rs            本地任务存储
+├── mock/                       开发用 H3 Mock 服务
+├── scripts/remote/             远端服务管理脚本
+└── doc/                        API 与后端设计文档
 ```
-config.json            服务地址 / API Key / 自动归档开关
-tasks.json             任务历史（含原始参数，支持重试/再次生成）
-chats.json             对话生成模式的会话历史
-frames/  refs/  videos/  thumbs/   上传帧、参考素材、归档视频、缩略图
+
+## 本地数据
+
+macOS 默认数据目录：
+
+```text
+~/Library/Application Support/com.h3.workbench/
+├── config.json                 服务地址、API Key 与归档设置
+├── tasks.json                  任务历史
+├── chats.json                  对话历史
+├── frames/                     首尾帧素材
+├── refs/                       参考素材
+├── videos/                     已归档视频
+└── thumbs/                     缩略图
 ```
 
-### 关键设计
+## 关键设计
 
-- **播放统一走 `h3video://`**：本地归档文件按 Range/206 流式响应（每次过量供给 ≥1MiB，对抗 WKWebView 碎片请求）；本地缺失时由 Rust 代理转发远端 `/content`，前端无感
-- **轮询 fan-out**：单条 `poll_tasks` 命令并发查询所有活跃任务；前端 3s 节奏，终态停轮
-- **任务后端快照**：每条任务保存 `backend_id`、后端名称和提交 URL；轮询、播放代理与归档不依赖当前选中的后端
-- **代理隔离**：Rust HTTP 客户端不继承系统 HTTP 代理，Tailscale/LAN 地址始终直连
-- **原子写**：`tasks.json` / `config.json` 经临时文件 rename 落盘；解析失败自动备份后空库启动
+- **统一播放链路**：本地文件和远端内容均通过 `h3video://` 访问；本地视频支持 Range 请求。
+- **并发轮询**：单次命令并发查询全部活跃任务，终态任务自动停止轮询。
+- **后端快照**：轮询、播放和归档使用任务创建时记录的后端，不受当前选择变化影响。
+- **代理隔离**：Rust HTTP 客户端不继承系统代理，便于稳定访问局域网或私有网络服务。
+- **原子持久化**：配置和任务文件先写临时文件再替换，解析失败时保留备份。
+- **内容寻址**：上传素材按内容去重，减少重复存储。
+
+## 相关文档
+
+- [H3 HTTP API](doc/h3-http-api.md)
+- [后端控制与多后端设计](doc/backend-control.md)
+- [Ref2VA HTTP API 提案](doc/ref2va-http-api-proposal.md)
